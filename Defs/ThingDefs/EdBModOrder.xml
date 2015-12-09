@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <ThingDefs>
 	<ThingDef>
-		<defName>Fluffy_ModManager</defName>
+		<defName>EdBFluffy_ModOrderWithVersionChecking_Bootstrapper</defName>
 		<category>Building</category>
 		<menuHidden>true</menuHidden>
-		<label>Fluffy_ModManager_Bootstrapper</label>
-		<thingClass>Fluffy.ModManager.Bootstrap</thingClass>
+		<label>EdB's mod order, with version checking by Fluffy.</label>
+		<thingClass>EdBFluffy.ModOrderWithVersionChecking.Bootstrap</thingClass>
 		<inspectorTabs>
-			<li>Fluffy.ModManager.Bootstrap</li>
+			<li>EdBFluffy.ModOrderWithVersionChecking.Bootstrap</li>
 		</inspectorTabs>
 	</ThingDef>
 </ThingDefs>

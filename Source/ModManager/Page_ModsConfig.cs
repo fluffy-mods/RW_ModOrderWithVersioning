@@ -4,6 +4,9 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
+using System.Xml;
+using System.Xml.Serialization;
 using UnityEngine;
 using Verse;
 using Verse.Sound;
@@ -54,7 +57,18 @@ namespace EdBFluffy.ModOrderWithVersionChecking
         // Dictionary of VersionData for each installed mod
         protected internal static Dictionary<string, VersionData> localVersionData = new Dictionary<string, VersionData>();
         protected internal static Dictionary<string, VersionData> remoteVersionData = new Dictionary<string, VersionData>();
-        protected internal static Dictionary<string, VersionStatus> versionStatus = new Dictionary<string, VersionStatus>();  
+        protected internal static Dictionary<string, VersionStatus> versionStatus = new Dictionary<string, VersionStatus>(); 
+        protected internal static Dictionary<string, StringBuilder> versionErrors = new Dictionary<string, StringBuilder>();
+
+        // textures and index for animated sprite
+	    private static Texture2D IconLoadingSprite = ContentFinder<Texture2D>.Get( "Fluffy/loading-sprite" );
+	    private static Texture2D IconCheckOnTex = ContentFinder<Texture2D>.Get( "Fluffy/CheckOn" );
+        private static Texture2D IconCheckOffTex = ContentFinder<Texture2D>.Get( "Fluffy/CheckOff" );
+        private static Texture2D IconQuestionMark = ContentFinder<Texture2D>.Get( "Fluffy/QuestionMark" );
+        private static int loadingSpriteIndex = 0;
+
+        // start the XML serializer for getting VersionData object from xml.
+        private static XmlSerializer serializer = new XmlSerializer(typeof(VersionData));
 
         // Load the textures.
         public static void ResetTextures() {
@@ -75,31 +89,41 @@ namespace EdBFluffy.ModOrderWithVersionChecking
 			// Set available options for the Layer base class.
 			this.forcePause = true;
 			this.doCloseButton = false;
-
-			// Initialize the available mods list and version data.  The installed mods list is alphabetical, so we
-			// just iterate it to add non-active mods to the list of available mods.
-		    localVersionData.Clear();
-			foreach (InstalledMod current in InstalledModLister.AllInstalledMods) {
+            
+            // Initialize the available mods list and version data.  The installed mods list is alphabetical, so we
+            // just iterate it to add non-active mods to the list of available mods.
+            foreach (InstalledMod current in InstalledModLister.AllInstalledMods) {
 			    try
                 {
-                    // get mod's version data from about.xml
-                    VersionData version =
-			            XmlLoader.ItemFromXmlFile<VersionData>(
-			                current.Directory.FullName + Path.DirectorySeparatorChar + "About" +
-			                Path.DirectorySeparatorChar + "Version.xml" );
+                    Log.Message( current.Identifier + !localVersionData.ContainsKey( current.Identifier ) );
 
-                    // keep the version data in a dictionary so we can look it up by mod name.
-                    localVersionData.Add( current.Identifier, version );
+                    if ( !localVersionData.ContainsKey( current.Identifier ) )
+                    {
+                        // get mod's version data from Version.xml
+                        string path = current.Directory.FullName + Path.DirectorySeparatorChar + "About" +
+                                Path.DirectorySeparatorChar + "Version.xml";
+                        VersionData version = new VersionData();
+                        if ( File.Exists( path ) )
+                        {
+                            version = (VersionData)serializer.Deserialize( new XmlTextReader( path ) );
+                        }
 
-                    // initiatize latest versions.
-                    remoteVersionData.Add( current.Identifier, null );
+                        // keep the version data in a dictionary so we can look it up by mod name.
+                        localVersionData.Add( current.Identifier, version );
 
-                    // initialize version status.
-                    versionStatus.Add( current.Identifier, VersionStatus.Fetching );
+                        // initiatize latest versions.
+                        remoteVersionData.Add( current.Identifier, null );
+
+                        // initialize version status.
+                        versionStatus.Add( current.Identifier, VersionStatus.Fetching );
+
+                        // initialize error messages
+                        versionErrors.Add( current.Identifier, new StringBuilder() );
+                    }
                 }
-			    catch
+			    catch (Exception e)
 			    {
-			        Log.Error( "Could not load versioninfo" );
+			        Log.Error( "Versioning: Exception reading Version.xml for " + current.Identifier + ":\n" + e );
 			    }
 
 
@@ -250,9 +274,12 @@ namespace EdBFluffy.ModOrderWithVersionChecking
 
                         // Draw a version icon on the right side of the row.
                         // I really can't be bothered with setting up static Rects, don't see the point either.
-                        // rowHeight = 34, iconsize of 20, leaves a margin of 7f.
-                        Rect versionRect = new Rect( rowRect.xMax - 27f, rowRect.yMin + 7f, 20f, 20f);
-					    DrawVersionStatus( versionRect, mod.Identifier );
+                        // rowHeight = 34, iconsize of 16, leaves a margin of 9.
+                        Rect versionRect = new Rect( rowRect.xMax - 23f, rowRect.yMin + 9f, 16f, 16f);
+
+                        // offset for scrollbar if needed
+                        if( viewRect.height > scrollRect.height ) versionRect.x -= 16f;
+                        DrawVersionStatus( versionRect, mod.Identifier );
 
                         // Move the rectangles down for the next row.
                         rowRect.y += AvailableModRowRect.height;
@@ -344,7 +371,10 @@ namespace EdBFluffy.ModOrderWithVersionChecking
                         // Draw a version icon on the right side of the row.
                         // I really can't be bothered with setting up static Rects, don't see the point either.
                         // rowHeight = 34, iconsize of 20, leaves a margin of 7f.
-                        Rect versionRect = new Rect( rowRect.xMax - 27f, rowRect.yMin + 7f, 20f, 20f);
+                        Rect versionRect = new Rect( rowRect.xMax - 23f, rowRect.yMin + 9f, 16f, 16f);
+
+                        // offset for scrollbar if needed
+					    if ( viewRect.height > scrollRect.height ) versionRect.x -= 16f;
                         DrawVersionStatus( versionRect, mod.Identifier );
 
                         // Move the rectangles down for the next row.
@@ -450,38 +480,43 @@ namespace EdBFluffy.ModOrderWithVersionChecking
 	    private void DrawVersionStatus( Rect canvas, string identifier )
 	    {
 	        VersionStatus status = versionStatus[identifier];
-            //TODO: replace with textures.
-	        string statusString = String.Empty;
-            //TODO: add date and version to tooltip, if available.
             string statusTooltip = String.Empty;
 
 	        switch ( status )
 	        {
                 case VersionStatus.Error:
-	                statusString = "?";
-                    // TODO: Add detailed error message.
-	                statusTooltip = "An error occured while fetching latest version data.";
+	                GUI.color = Color.grey;
+                    GUI.DrawTexture( canvas, IconCheckOffTex );
+                    GUI.color = Color.white;
+                    statusTooltip = "Fluffy.VersionChecking.Error".Translate( versionErrors[identifier].ToString() );
 	                break;
                 case VersionStatus.Fetching:
-	                statusString = "?";
-	                statusTooltip = "Fetching latest version data.";
+                    int i = (loadingSpriteIndex++ / 10) % 48; // 4 by 12 tex -> 48 sprites, advance a frame every 10 iterations.
+                    float top = (i / 12) / 4f; // these are normalized, so 0-1 range.
+                    float left = (i % 12) / 12f;
+                    GUI.DrawTextureWithTexCoords( canvas, IconLoadingSprite, new Rect( left, top, 1f/12, 1f/4) );
+                    statusTooltip = "Fluffy.VersionChecking.Fetching".Translate() + "\n\n"
+                        + "Fluffy.VersionChecking.CurrentVersion".Translate( localVersionData[identifier].version, localVersionData[identifier].date);
 	                break;
                 case VersionStatus.Latest:
-	                statusString = "ok";
-	                statusTooltip = "Up to date.";
-	                break;
+                    GUI.DrawTexture( canvas, IconCheckOnTex );
+                    statusTooltip = "Fluffy.VersionChecking.UpToDate".Translate() + "\n\n"
+                        + "Fluffy.VersionChecking.CurrentVersion".Translate( localVersionData[identifier].version, localVersionData[identifier].date );
+                    break;
                 case VersionStatus.NotImplemented:
-	                statusString = "?";
-	                statusTooltip = "Mod author has not implemented version checking.";
-                    // TODO: Add link to bug author.
+                    GUI.color = Color.grey;
+                    GUI.DrawTexture( canvas, IconQuestionMark );
+                    GUI.color = Color.white;
+	                statusTooltip = "Fluffy.VersionChecking.NotImplemented".Translate();
 	                break;
                 case VersionStatus.Outdated:
-	                statusString = "!";
-	                statusTooltip = "A newer version is available.";
-	                break;
+                    GUI.DrawTexture( canvas, IconCheckOffTex );
+                    statusTooltip = "Fluffy.VersionChecking.Outdated".Translate() + "\n\n"
+                        + "Fluffy.VersionChecking.LatestVersion".Translate( remoteVersionData[identifier].version, remoteVersionData[identifier].date ) + "\n\n"
+                        + "Fluffy.VersionChecking.CurrentVersion".Translate( localVersionData[identifier].version, localVersionData[identifier].date );
+                    break;
 	        }
-
-            Widgets.Label( canvas, statusString );
+            
             TooltipHandler.TipRegion( canvas, statusTooltip );
 	    }
 
@@ -524,11 +559,12 @@ namespace EdBFluffy.ModOrderWithVersionChecking
 	        WWW www;
 	        try
 	        {
-	            www = new WWW( WWW.EscapeURL( localVersionData[identifier].versionURL ) );
+	            www = new WWW( localVersionData[identifier].versionURL );
 	        }
-	        catch
+	        catch ( Exception e )
 	        {
                 versionStatus[identifier] = VersionStatus.Error;
+	            versionErrors[identifier].AppendLine( e.Message );
 	            yield break;
 	        }
 
@@ -536,20 +572,67 @@ namespace EdBFluffy.ModOrderWithVersionChecking
 	        yield return www;
             
             // check response for errors
-	        if ( www.error != null )
+	        if ( !string.IsNullOrEmpty( www.error ) )
 	        {
                 versionStatus[identifier] = VersionStatus.Error;
+	            versionErrors[identifier].AppendLine( www.error );
                 yield break;
             } 
 
-            // set version information
-            // TODO: Handle creating version data object from string
-            versionStatus[identifier] = VersionStatus.Latest;
-	    }
+            // get version object from www result
+	        try
+	        {
+	            StringReader rdr = new StringReader( www.text );
+	            remoteVersionData[identifier] = (VersionData)serializer.Deserialize( rdr );
+	        }
+	        catch ( Exception e )
+            {
+                versionStatus[identifier] = VersionStatus.Error;
+                versionErrors[identifier].AppendLine( e.ToString() );
+                yield break;
+            }
+
+            // shotcuts to both versiondatas
+            VersionData local = localVersionData[identifier];
+            VersionData remote = remoteVersionData[identifier];
+
+            // if either version is null or empty error out.
+            if ( string.IsNullOrEmpty( remote?.version ) ||
+	             string.IsNullOrEmpty( local?.version ) )
+            {
+                versionStatus[identifier] = VersionStatus.Error;
+                versionErrors[identifier].AppendLine( "No version number in local or remote Version.xml" );
+                yield break;
+            }
+
+            // try creating Version objects from the version string used.
+            Version _local, _remote;
+            try
+            {
+                _local = new Version( local.version );
+                _remote = new Version( remote.version );
+            }
+            catch( Exception e )
+            {
+                versionStatus[identifier] = VersionStatus.Error;
+                versionErrors[identifier].AppendLine( "Malformed version string. \n\nNote to modder: use version numbering as used by convention: major.minor[.build[.revision]], where each is numeric only, and build/revision are optional.\n\n" + e );
+                yield break;
+            }
+
+            // finally, determine if the version numbers match
+	        if ( _local >= _remote )
+	        {
+	            versionStatus[identifier] = VersionStatus.Latest;
+	        }
+	        else
+	        {
+                versionStatus[identifier] = VersionStatus.Outdated;
+            }
+        }
 
 
         // Check if mod is up to date
-	    protected bool? IsUpToDate( VersionData local, VersionData remote )
+        protected bool? IsUpToDate( VersionData local, VersionData remote )
 	    {
             // catch nulls
 	        if ( string.IsNullOrEmpty( remote?.version ) || string.IsNullOrEmpty( local?.version ) ) return null;
@@ -762,10 +845,10 @@ namespace EdBFluffy.ModOrderWithVersionChecking
 	    {
 	        base.PreOpen();
 
-            // make a request for each mod (those that don't set versioning info will fail early).
-	        foreach ( InstalledMod mod in InstalledModLister.AllInstalledMods )
+            // make a request for each mod (those that don't set versioning info will fail early and gracefully).
+	        foreach ( string identifier in localVersionData.Keys )
 	        {
-	            ModController.instance.StartCoroutine( GetVersionStatus( mod.Identifier ) );
+	            ModController.instance.StartCoroutine( GetVersionStatus( identifier ) );
 	        }
 	    }
 

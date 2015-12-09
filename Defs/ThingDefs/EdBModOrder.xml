@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ThingDefs>
+	<ThingDef>
+		<defName>Fluffy_ModManager</defName>
+		<category>Building</category>
+		<menuHidden>true</menuHidden>
+		<label>Fluffy_ModManager_Bootstrapper</label>
+		<thingClass>Fluffy.ModManager.Bootstrap</thingClass>
+		<inspectorTabs>
+			<li>Fluffy.ModManager.Bootstrap</li>
+		</inspectorTabs>
+	</ThingDef>
+</ThingDefs>

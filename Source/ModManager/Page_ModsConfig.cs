@@ -95,13 +95,10 @@ namespace EdBFluffy.ModOrderWithVersionChecking
             foreach (InstalledMod current in InstalledModLister.AllInstalledMods) {
 			    try
                 {
-                    Log.Message( current.Identifier + !localVersionData.ContainsKey( current.Identifier ) );
-
                     if ( !localVersionData.ContainsKey( current.Identifier ) )
                     {
                         // get mod's version data from Version.xml
-                        string path = current.Directory.FullName + Path.DirectorySeparatorChar + "About" +
-                                Path.DirectorySeparatorChar + "Version.xml";
+                        string path = string.Join(Path.DirectorySeparatorChar.ToString(), new []{current.Directory.FullName, "About", "Version.xml"});
                         VersionData version = new VersionData();
                         if ( File.Exists( path ) )
                         {
@@ -125,7 +122,6 @@ namespace EdBFluffy.ModOrderWithVersionChecking
 			    {
 			        Log.Error( "Versioning: Exception reading Version.xml for " + current.Identifier + ":\n" + e );
 			    }
-
 
                 // add mod to available list if not active.
                 if (!current.Active) {
@@ -564,7 +560,8 @@ namespace EdBFluffy.ModOrderWithVersionChecking
 	        catch ( Exception e )
 	        {
                 versionStatus[identifier] = VersionStatus.Error;
-	            versionErrors[identifier].AppendLine( e.Message );
+                versionErrors[identifier].AppendLine( "Error preparing for fetching remote Version.xml" );
+                versionErrors[identifier].AppendLine( e.Message );
 	            yield break;
 	        }
 
@@ -575,7 +572,8 @@ namespace EdBFluffy.ModOrderWithVersionChecking
 	        if ( !string.IsNullOrEmpty( www.error ) )
 	        {
                 versionStatus[identifier] = VersionStatus.Error;
-	            versionErrors[identifier].AppendLine( www.error );
+                versionErrors[identifier].AppendLine( "Error fetching remote Version.xml" );
+                versionErrors[identifier].AppendLine( www.error );
                 yield break;
             } 
 
@@ -588,7 +586,8 @@ namespace EdBFluffy.ModOrderWithVersionChecking
 	        catch ( Exception e )
             {
                 versionStatus[identifier] = VersionStatus.Error;
-                versionErrors[identifier].AppendLine( e.ToString() );
+                versionErrors[identifier].AppendLine( "Error parsing remote Version.xml" );
+                versionErrors[identifier].AppendLine( www.text );
                 yield break;
             }
 
@@ -597,11 +596,16 @@ namespace EdBFluffy.ModOrderWithVersionChecking
             VersionData remote = remoteVersionData[identifier];
 
             // if either version is null or empty error out.
-            if ( string.IsNullOrEmpty( remote?.version ) ||
-	             string.IsNullOrEmpty( local?.version ) )
+            if( string.IsNullOrEmpty( local?.version ) )
             {
                 versionStatus[identifier] = VersionStatus.Error;
-                versionErrors[identifier].AppendLine( "No version number in local or remote Version.xml" );
+                versionErrors[identifier].AppendLine( "Local version string not defined." );
+                yield break;
+            }
+            if( string.IsNullOrEmpty( remote?.version ) )
+            {
+                versionStatus[identifier] = VersionStatus.Error;
+                versionErrors[identifier].AppendLine( "Remote version string not defined." );
                 yield break;
             }
 
@@ -610,12 +614,20 @@ namespace EdBFluffy.ModOrderWithVersionChecking
             try
             {
                 _local = new Version( local.version );
+            }
+            catch( Exception e )
+            {
+                versionStatus[identifier] = VersionStatus.Error;
+                versionErrors[identifier].AppendLine( "Malformed local version string. \n\nNote to modder: use version numbering as used by convention: major.minor[.build[.revision]], where each is numeric only, and build/revision are optional.\n\n" + e );
+                yield break;
+            }
+            try { 
                 _remote = new Version( remote.version );
             }
             catch( Exception e )
             {
                 versionStatus[identifier] = VersionStatus.Error;
-                versionErrors[identifier].AppendLine( "Malformed version string. \n\nNote to modder: use version numbering as used by convention: major.minor[.build[.revision]], where each is numeric only, and build/revision are optional.\n\n" + e );
+                versionErrors[identifier].AppendLine( "Malformed remote version string. \n\nNote to modder: use version numbering as used by convention: major.minor[.build[.revision]], where each is numeric only, and build/revision are optional.\n\n" + e );
                 yield break;
             }
 
